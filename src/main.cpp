@@ -35,7 +35,6 @@ Color trace_ray (const std::vector<Object *> &objects,
         if (tmp.hit && (!res.hit || res.dist - tmp.dist > EPS)) {
             res = tmp;
             the_object = object;
-        // if (sph.ray_intersect(ray, dist)) {
         }
     }
     if (res.hit) {
@@ -45,7 +44,7 @@ Color trace_ray (const std::vector<Object *> &objects,
         for (Light light: lights) {
             Vect light_dir = (light.pos - res.pos).normalize();
             float light_dist = (light.pos - res.pos).len();
-            Vect pos = light_dir.dot(res.normal) < 0 ? res.pos - res.normal * 1e-3 : res.pos + res.normal * 1e-3;
+            Vect pos = light_dir.dot(res.normal) < 0 ? res.pos - res.normal * 1e-2 : res.pos + res.normal * 1e-2;
             Ray light_ray(pos, light_dir);
             Ray light_ray1(pos, light_dir - light_dir *2);
             Intersection tmp_res;
@@ -68,13 +67,13 @@ Color trace_ray (const std::vector<Object *> &objects,
         res.color = res.color * diffuse_light_intensity * the_object->reflection[0] +
                     Color(1, 1, 1, 1) * (specular_light_intensity * the_object->reflection[1]);
         if (the_object->reflection[2] > 0) {
-            Vect refl_pos = (res.reflected).dot(res.normal) < 0 ? res.pos - res.normal * 1e-3 : res.pos + res.normal * 1e-3;
+            Vect refl_pos = (res.reflected).dot(res.normal) < 0 ? res.pos - res.normal * 1e-2 : res.pos + res.normal * 1e-2;
             Ray reflected_ray(refl_pos, res.reflected);
             Color reflected_color = trace_ray(objects, lights, reflected_ray, depth - 1);
             res.color = res.color + reflected_color * the_object->reflection[2];
         }
         if (the_object->reflection[3] > 0) {
-            Vect refr_pos = res.refracted.dot(res.normal) < 0 ? res.pos - res.normal * 1e-3 : res.pos + res.normal * 1e-3;
+            Vect refr_pos = res.refracted.dot(res.normal) < 0 ? res.pos - res.normal * 1e-2 : res.pos + res.normal * 1e-2;
             Ray refracted_ray(refr_pos, res.refracted);
             Color refracted_color = trace_ray(objects, lights, refracted_ray, depth - 1);
             res.color = res.color + refracted_color * the_object->reflection[3];
@@ -93,22 +92,32 @@ void render(const int size) {
     // Triangle tr = Triangle(a, b, c);
     Vect ico_pos (size / 2, size / 2, size / 4);
     Vect ico_pos1 (size / 4, size / 4, 2*size/3);
-    Icosahedron ico(100, ico_pos, Vect(0, 1, 0));
+    Icosahedron ico(100, ico_pos, Vect(0, 1, 0.2));
     // Icosahedron ico(100, Vect(3*size/4, size/3, size/3), Vect(0, 1, 0));
     // Icosahedron ico(50, Vect(3*size/4, size/3, size/3), Vect(0,1,0));
-    ico.reflection[0] = 0.2;
+    ico.reflection[0] = 0.5;
     ico.reflection[1] = 0.8;
-    ico.reflection[2] = 0.0;
+    ico.reflection[2] = 0.3;
     ico.reflection[3] = 1.2; //прозрачность
-    ico.refraction = 1;
+    ico.refraction = 1.02;
     ico.specular = 125;
     // ico.color = Color(0, 0, 0, 1);
+    float ico_rad = sqrt(2 * (5 + sqrt(5))) * ico.edge / 4;
+    float cyl_height = 40;
+    Cylinder cyl(ico.center + ico.axis * (ico_rad + cyl_height / 2 - 2), cyl_height, 180, ico.axis);
+    cyl.reflection[0] = 0.6;
+    cyl.reflection[1] = 0.5;
+    cyl.reflection[2] = 0.5;
+    cyl.reflection[3] = 0.0;
+    cyl.refraction = 10;
+    cyl.specular = 250;
+    cyl.color = Color(0.3, 0.3, 0.2, 1) - Color() / 3;
     Icosahedron ico1(150, ico_pos1, Vect(1, 1, 0));
     ico1.reflection[0] = 0.3;
     ico1.reflection[1] = 0.3;
     ico1.reflection[2] = 0.3;
     ico1.reflection[3] = 0.0;
-    ico.refraction = 50;
+    ico1.refraction = 50;
     ico1.specular = 50;
     Sphere sph1(Vect(size / 4, size / 4, 2*size/3), 120);
     sph1.reflection[0] = 0.6;
@@ -117,13 +126,13 @@ void render(const int size) {
     sph1.reflection[3] = 0.0;
     sph1.specular = 150;
     sph1.color = Color(1, 0, 0, 1);
-    Sphere sph(Vect(3*size/4, size/3, size/3), 50);
+    Sphere sph(Vect(3*size/4 - 50, size/3, size/3), 50);
     // Sphere sph(Vect(size / 2, size / 2, size / 4), 50);
     sph.reflection[0] = 0.0;
     sph.reflection[1] = 1;
     sph.reflection[2] = 0.8;
-    sph.reflection[3] = 1.2;
-    ico.refraction = 1.5;
+    sph.reflection[3] = 0;
+    sph.refraction = 1;
     sph.specular = 1425;
     sph.color = Color(1, 0, 0, 1);
     // for (int i = 0; i < 20; i++) {
@@ -147,6 +156,7 @@ void render(const int size) {
     objects.push_back(&ico1);
     // objects.push_back(&sph1);
     objects.push_back(&sph);
+    objects.push_back(&cyl);
     Light light_1(Vect(2*size/3, size/2, -size), 5);
     Light light_2(Vect(0, -size/2, size/4), 2);
     Light light_3(Vect(-size/4, size/2, size/2), 2);

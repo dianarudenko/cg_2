@@ -9,7 +9,7 @@ struct Color {
     float b;
     float a;
 
-    Color(float r = 0, float g = 0.5, float b = 0.5, float a = 1): r(r), g(g), b(b), a(a) {}
+    Color(float r = 0.9, float g = 0.8, float b = 0.6, float a = 1): r(r), g(g), b(b), a(a) {}
     const Color operator*(float f) const;
     const Color operator/(float f) const;
     Color operator+(const Color c) const;

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 
+//--------------------------- TRIANGLE ---------------------------//
 Intersection Triangle::intersect(Ray ray) {
     Intersection res;
     Vect ab = b - a;
@@ -43,6 +44,8 @@ Intersection Triangle::intersect(Ray ray) {
     return Intersection();
 }
 
+//--------------------------- ICOSAHEDRON ---------------------------//
+
 Icosahedron::Icosahedron(float edge, Vect center, Vect axis): edge(edge), center(center), axis(axis) {
     triangles_number = 20;
     triangles = new Triangle[triangles_number];
@@ -55,7 +58,7 @@ Icosahedron::Icosahedron(float edge, Vect center, Vect axis): edge(edge), center
     Vect bottom = center - _axis * cercumscribed_rad;
     Vect normal = _axis.cross(Vect(_axis.x, -_axis.z, _axis.y)).normalize();
     if ((-_axis.z == _axis.y) && (_axis.z == _axis.y)) {
-        normal = Vect(1, 1, 1);
+        normal = _axis.cross(Vect(1, 1, 1)).normalize();
     }
 
     float h = sqrt(3) * edge / 2;
@@ -122,5 +125,85 @@ Intersection Icosahedron::intersect(Ray ray) {
     // res.reflect = reflect;
     // res.absorbtion = absorbtion;
     // res.real = real;
+    return res;
+}
+
+//--------------------------- CYLINDER ---------------------------//
+
+Intersection Cylinder::intersect(Ray ray) {
+    Intersection res;
+    Vect upper = center + axis * (height / 2);
+    Vect lower = center - axis * (height / 2);
+    Vect delta_p = ray.pos - center;
+
+    float a = (ray.dir - axis * ray.dir.dot(axis)).dot(ray.dir - axis * ray.dir.dot(axis));
+    float b = 2 * (ray.dir - axis * ray.dir.dot(axis)).dot(delta_p - axis * delta_p.dot(axis));
+    float c = (delta_p - axis * delta_p.dot(axis)).dot(delta_p - axis * delta_p.dot(axis)) - rad * rad;
+
+    float dist = -1;
+    if (a == 0) {
+        if (b == 0) {
+            return res;
+        }
+        dist = -c / b;
+        if (dist < EPS) {
+            return res;
+        }
+    } else {
+        float d = b * b - 4 * a * c;
+        if (d < 0) {
+            return res;
+        }
+        float t1 = (-b + sqrtf(d)) / (2 * a);
+        float t2 = (-b - sqrtf(d)) / (2 * a);
+        float height1 = abs(axis.dot(ray.pos + ray.dir * t1 - center));
+        float height2 = abs(axis.dot(ray.pos + ray.dir * t2 - center));
+        if ((t1 > 0) && (axis.dot(ray.pos + ray.dir * t1 - lower) > 0) && (height1 < height / 2)) {
+            if (dist < EPS) {
+                dist = t1;
+            } else {
+                dist = std::min(dist, t1);
+            }
+        }
+        if ((t2 > 0) && (axis.dot(ray.pos + ray.dir * t2 - upper) < 0) && (height2 < height / 2)) {
+            if (dist < EPS) {
+                dist = t2;
+            } else {
+                dist = std::min(dist, t2);
+            }
+        }
+    }
+    Vect pos = ray.pos + ray.dir * dist;
+    Vect normal = (pos - (center + axis * axis.dot(pos - center))).normalize(); // ?
+    // normal = -normal;
+
+    float t3 = -(axis.dot(ray.pos) - axis.dot(upper)) / axis.dot(ray.dir);
+    if ((t3 > 0) && ((upper - (ray.pos + ray.dir * t3)).len() < rad)) {
+        if (dist < EPS) {
+            dist = t3;
+        } else if (t3 < dist) {
+            dist = t3;
+            normal = axis;
+        }
+    }
+    float t4 = -(axis.dot(ray.pos) - axis.dot(lower)) / axis.dot(ray.dir);
+    if ((t4 > 0) && ((lower - (ray.pos + ray.dir * t4)).len() < rad)) {
+        if (dist < EPS) {
+            dist = t4;
+        } else if (t4 < dist) {
+            dist = t4;
+            normal = -axis;
+        }
+    }
+    if (dist < EPS) {
+        return res;
+    }
+
+    res.hit = true;
+    res.color = color;
+    res.dist = dist;
+    res.pos = ray.pos + ray.dir * dist;
+    res.normal = normal;
+    res.reflected = ray.dir.reflect(res.normal);
     return res;
 }

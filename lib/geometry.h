@@ -1,5 +1,6 @@
 #include "lib.h"
 #include <cmath>
+#include <iostream>
 
 #ifndef MYGEOMETRY
 #define MYGEOMETRY
@@ -59,7 +60,7 @@ struct Object {
         // absorbtion = 0;
     }
     virtual Intersection intersect(Ray r) = 0;
-    virtual ~Object() { delete triangles; };
+    virtual ~Object() { delete triangles; std::cout << "kok"; };
 };
 
 struct Icosahedron: public Object {
@@ -68,7 +69,7 @@ struct Icosahedron: public Object {
     Vect axis;
 
     Icosahedron(const float edge, const Vect center, const Vect axis);
-    virtual Intersection intersect(Ray ray);
+    Intersection intersect(Ray ray);
 };
 
 struct Sphere: public Object {
@@ -101,6 +102,19 @@ struct Sphere: public Object {
         }
         return res;
     }
+};
+
+struct Cylinder: public Object {
+    Vect center;
+    float height;
+    float rad;
+    Vect axis;
+
+    Cylinder(Vect center, float height, float rad, Vect axis): center(center),
+                                                               height(height),
+                                                               rad(rad),
+                                                               axis(axis.normalize()) {};
+    Intersection intersect(Ray ray);
 };
 
 #endif
