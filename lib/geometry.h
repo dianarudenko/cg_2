@@ -39,28 +39,39 @@ struct Triangle {
 };
 
 struct Object {
-    // bool real;
     int triangles_number;
     Triangle *triangles;
     Color color;
-    float reflection [4];
+    float reflection [2];
     float specular;
     float refraction;
-    // float absorbtion;
+    float absorbtion;
+    float transparency;
     Object() {
         triangles_number = 0;
         triangles = NULL;
         color = Color();
+        absorbtion = 1;
+        transparency = 0;
         reflection[0] = 0;
-        reflection[1] = 1;
-        reflection[2] = 0;
-        reflection[4] = 0;
+        reflection[1] = 0;
         specular = 0;
-        refraction = 0;
-        // absorbtion = 0;
+        refraction = 1;
     }
     virtual Intersection intersect(Ray r) = 0;
-    virtual ~Object() { delete triangles; std::cout << "kok"; };
+};
+
+struct Plane: public Object {
+    Vect normal;
+    Vect dot;
+    Color color1;
+    Color color2;
+
+    Plane(Vect normal, Vect dot, Color color1, Color color2): normal(normal),
+                                                              dot(dot),
+                                                              color1(color1),
+                                                              color2(color2) {}
+    Intersection intersect(Ray ray);
 };
 
 struct Icosahedron: public Object {
@@ -70,38 +81,6 @@ struct Icosahedron: public Object {
 
     Icosahedron(const float edge, const Vect center, const Vect axis);
     Intersection intersect(Ray ray);
-};
-
-struct Sphere: public Object {
-    Vect center;
-    float radius;
-    // float reflection;
-    // float specular;
-
-    Sphere(const Vect &c, const float &r) : center(c), radius(r) {}
-
-    Intersection intersect(Ray ray) {
-        Intersection res;
-        Vect L = center - ray.pos;
-        float tca = L.dot(ray.dir);
-        float d2 = L.dot(L) - tca*tca;
-        if (d2 > radius*radius) return false;
-        float thc = sqrtf(radius*radius - d2);
-        float t0  = tca - thc;
-        float t1 = tca + thc;
-        if (t0 < 0) t0 = t1;
-        if (t0 < 0) res.hit = false;
-        else {
-            res.hit = true;
-            res.dist = t0;
-            res.pos = ray.pos + ray.dir * t0;
-            res.normal = (res.pos - center).normalize();
-            res.reflected = ray.dir.reflect(res.normal);
-            res.color = color;
-            res.refracted = ray.dir.refract(res.normal, refraction).normalize();
-        }
-        return res;
-    }
 };
 
 struct Cylinder: public Object {
@@ -114,6 +93,20 @@ struct Cylinder: public Object {
                                                                height(height),
                                                                rad(rad),
                                                                axis(axis.normalize()) {};
+    Intersection intersect(Ray ray);
+};
+
+struct Ellipsoid: public Object {
+    Vect center;
+    Vect axis_a;
+    float a_rad;
+    float b_rad;
+    float c_rad;
+
+    Ellipsoid(Vect center, float a_rad, float b_rad, float c_rad): center(center),
+                                                                   a_rad(a_rad),
+                                                                   b_rad(b_rad),
+                                                                   c_rad(c_rad) {}
     Intersection intersect(Ray ray);
 };
 

@@ -1,7 +1,7 @@
 #ifndef MYLIB
 #define MYLIB
 
-#define EPS 0.1
+#define EPS 0.01
 
 struct Color {
     float r;
@@ -23,25 +23,32 @@ struct Vect {
     float z;
 
     Vect(float x = 0, float y = 0, float z = 0): x(x), y(y), z(z) {}
-    // Vect(const Vect& v);
     Vect operator-(const Vect& v) const;
     Vect operator-() const;
     Vect operator+(const Vect& v) const;
     Vect operator*(const float a) const;
-    // Vect operator=(const Vect& v);
+    bool operator==(const Vect& v) const;
     float len();
     Vect normalize();
-    float dot(Vect other);
+    float dot(const Vect other) const;
     Vect cross(Vect other);
     Vect rotateAroundAxis(Vect axis, float angle);
     Vect reflect(Vect normal);
-    Vect refract(Vect normal, float refraction);
+    Vect refract(Vect normal, float refraction, float other_side = 1.f);
+};
+
+struct Matrix {
+    Vect v1;
+    Vect v2;
+    Vect v3;
+
+    Matrix (Vect v1, Vect v2, Vect v3): v1(v1), v2(v2), v3(v3) {}
+    Vect operator*(const Vect&) const;
 };
 
 struct Light {
     Vect pos;
     float intensity;
-    // Color color;
     Light() {}
     Light(Vect pos, float intensity) : pos(pos), intensity(intensity) {}
 };

@@ -25,11 +25,6 @@ Color Color::normalize() const {
 
 
 //--------------------------- VECTOR ---------------------------//
-// Vect::Vect(const Vect& v) {
-//     x = v.x;
-//     y = v.y;
-//     z = v.z;
-// }
 
 Vect Vect::operator-(const Vect& v) const {
     return Vect(x - v.x, y - v.y, z - v.z);
@@ -47,12 +42,9 @@ Vect Vect::operator*(const float a) const {
     return Vect(x * a, y * a, z * a);
 }
 
-// Vect Vect::operator=(const Vect& v) {
-//     x = v.x;
-//     y = v.y;
-//     z = v.z;
-//     return *this;
-// }
+bool Vect::operator==(const Vect& v) const {
+    return (x == v.x) && (y == v.y) && (z == v.z);
+}
 
 float Vect::len() {
     return sqrt(x * x + y * y + z * z);
@@ -63,7 +55,7 @@ Vect Vect::normalize() {
     return Vect(x / len, y / len, z / len);
 }
 
-float Vect::dot(Vect other) {
+float Vect::dot(const Vect other) const {
     return x * other.x + y * other.y + z * other.z;
 }
 
@@ -83,30 +75,15 @@ Vect Vect::rotateAroundAxis(Vect axis, float angle) {
 
 Vect Vect::reflect(Vect normal) {
     Vect v = (*this).normalize();
-    if (v.dot(normal) > 0) normal = -normal;
     return (v - normal * (v.dot(normal)) * 2).normalize();
-    // return (*this - normal * 2 * dot(normal)).normalize();
 }
 
-Vect Vect::refract(Vect normal, float refraction) {
-    // if (refraction == 0) {
-    //     return *this;
-    // }
-    // float n1 = 1, n2 = refraction;
-    // float cosi = (*this).normalize().dot(-normal);
-    // if (cosi < 0) {
-    //     std::swap(n1, n1);
-    //     cosi = -cosi;
-    // }
-    // float alpha = acos(cosi);
-    // float beta = asin(sin(alpha) * n1 / n2);
-    // Vect axis = cross(normal);
-    // return rotateAroundAxis(axis, beta - alpha).normalize();
+Vect Vect::refract(Vect normal, float refraction, float other_side) {
     if (refraction == 0) {
         return *this;
     }
     float cosi = -std::max(-1.f, std::min(1.f, dot(normal)));
-    float etai = 1;
+    float etai = int(other_side * 1000) / 1000;
     float etat = refraction;
     Vect n = normal;
     if (cosi < 0) {
@@ -116,5 +93,14 @@ Vect Vect::refract(Vect normal, float refraction) {
     }
     float eta = etai / etat;
     float k = 1 - eta * eta * (1 - cosi * cosi);
+    if (k < -0.001) {
+        throw (int)-1;
+    }
     return (n * (eta * cosi - sqrtf(k)) + (*this) * eta).normalize();
+}
+
+//--------------------------- MATRIX ---------------------------//
+    
+Vect Matrix::operator*(const Vect& v) const {
+    return Vect(v1.dot(v), v2.dot(v), v3.dot(v));
 }

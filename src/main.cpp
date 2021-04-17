@@ -1,5 +1,6 @@
 #include <vector>
 #include <iostream>
+#include <ctime>
 // #include <algorithm>
 #include "lib.h"
 #include "geometry.h"
@@ -7,24 +8,11 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#define SIZE 512
-
-// Vect refract(Vect &I, const Vect &N, const float &refractive_index) { // Snell's law
-//     float cosi = - std::max(-1.f, std::min(1.f, I.dot(N)));
-//     float etai = 1, etat = refractive_index;
-//     Vect n = N;
-//     if (cosi < 0) {
-//         cosi = -cosi;
-//         std::swap(etai, etat); n = -N;
-//     }
-//     float eta = etai / etat;
-//     float k = 1 - eta*eta*(1 - cosi*cosi);
-//     return k < 0 ? Vect(0,0,0) : I*eta + n*(eta * cosi - sqrtf(k));
-// }
-
 Color trace_ray (const std::vector<Object *> &objects,
                  const std::vector<Light> &lights,
-                 Ray ray, int depth = 1) {
+                 Ray ray,
+                 std::vector<Object *> * refraction_stack,
+                 int depth = 1) {
     Intersection res;
     if (depth <= 0) {
         return res.color;
@@ -38,7 +26,7 @@ Color trace_ray (const std::vector<Object *> &objects,
         }
     }
     if (res.hit) {
-        // std::cout << "1";
+        Vect normal = res.normal;
         float diffuse_light_intensity = 0;
         float specular_light_intensity = 0;
         for (Light light: lights) {
@@ -46,39 +34,84 @@ Color trace_ray (const std::vector<Object *> &objects,
             float light_dist = (light.pos - res.pos).len();
             Vect pos = light_dir.dot(res.normal) < 0 ? res.pos - res.normal * 1e-2 : res.pos + res.normal * 1e-2;
             Ray light_ray(pos, light_dir);
-            Ray light_ray1(pos, light_dir - light_dir *2);
-            Intersection tmp_res;
-            for (Object * object: objects) {
-                Intersection tmp = object->intersect(light_ray);
-                if (tmp.hit && (!tmp_res.hit || (tmp_res.dist - tmp.dist > EPS))) {
-                    tmp_res = tmp;
+            bool visible = true;
+            float intensity_coeff = 1;
+            while (visible) {
+                Intersection tmp_res;
+                Object * tmp_object;
+                for (Object * object: objects) {
+                    Intersection tmp = object->intersect(light_ray);
+                    if (tmp.hit) {
+                        tmp_res = tmp;
+                        tmp_object = object;
+                        break;
+                    }
+                }
+                if (tmp_res.hit && (tmp_res.dist < light_dist)) {
+                    if (tmp_object->transparency < EPS) {
+                        visible = false;
+                    } else {
+                        light_ray.pos = light_dir.dot(tmp_res.normal) < 0 ?
+                                        tmp_res.pos - tmp_res.normal * 1e-2 :
+                                        tmp_res.pos + tmp_res.normal * 1e-2;
+                        intensity_coeff = tmp_object->transparency;
+                    }
+                } else {
+                    break;
                 }
             }
-            if (tmp_res.hit && (tmp_res.dist < light_dist)) {
+            if (!visible) {
                 continue;
             }
-            diffuse_light_intensity += light.intensity * std::max(0.f, light_dir.dot(res.normal));
-                                                    //    / (light_dir.len() * light_dir.len());
-            specular_light_intensity += powf(std::max(0.f, ((light_dir).reflect(res.normal)).dot(ray.dir)),
-                                             the_object->specular)
-                                        * light.intensity;
+            diffuse_light_intensity += light.intensity * std::max(0.f, light_dir.dot(normal)) *
+                                       intensity_coeff;
+            specular_light_intensity += powf(std::max(0.f, ((light_dir).reflect(normal)).dot(ray.dir)),
+                                             the_object->specular);
         }
-        // Vect refract_dir = refract(ray.dir, res.normal, the_object->refraction).normalize();
-        res.color = res.color * diffuse_light_intensity * the_object->reflection[0] +
-                    Color(1, 1, 1, 1) * (specular_light_intensity * the_object->reflection[1]);
-        if (the_object->reflection[2] > 0) {
+        res.color = res.color * diffuse_light_intensity * the_object->absorbtion +
+                    Color(1, 1, 1, 1) * specular_light_intensity * the_object->reflection[0];
+        if (the_object->reflection[1] > 0) {
             Vect refl_pos = (res.reflected).dot(res.normal) < 0 ? res.pos - res.normal * 1e-2 : res.pos + res.normal * 1e-2;
             Ray reflected_ray(refl_pos, res.reflected);
-            Color reflected_color = trace_ray(objects, lights, reflected_ray, depth - 1);
-            res.color = res.color + reflected_color * the_object->reflection[2];
+            Color reflected_color = trace_ray(objects, lights, reflected_ray, refraction_stack, depth - 1);
+            res.color = res.color + reflected_color * the_object->reflection[1];
         }
-        if (the_object->reflection[3] > 0) {
-            Vect refr_pos = res.refracted.dot(res.normal) < 0 ? res.pos - res.normal * 1e-2 : res.pos + res.normal * 1e-2;
-            Ray refracted_ray(refr_pos, res.refracted);
-            Color refracted_color = trace_ray(objects, lights, refracted_ray, depth - 1);
-            res.color = res.color + refracted_color * the_object->reflection[3];
+        if (the_object->transparency > 0.0001) {
+            float other_refraction;
+            if (refraction_stack->size() == 0) {
+                other_refraction = 1;
+            } else {
+                other_refraction = refraction_stack->back()->refraction;
+            }
+            bool do_refract = true;
+            Vect refracted;
+            try {
+                refracted = ray.dir.refract(res.normal, the_object->refraction, other_refraction);
+            } catch(int) {
+                do_refract = false;
+            }
+            if (do_refract) {
+                Vect refr_pos = refracted.dot(res.normal) < 0 ? res.pos - res.normal * 1e-2 : res.pos + res.normal * 1e-2;
+                Ray refracted_ray(refr_pos, refracted);
+                if (refraction_stack->size() != 0) {
+                    bool contains = false;
+                    for (int i = 0; i < int(refraction_stack->size()); i++) {
+                        if (refraction_stack->at(refraction_stack->size() - i - 1) == the_object) {
+                            contains = true;
+                            refraction_stack->erase(refraction_stack->end() - i - 1);
+                            break;
+                        }
+                    }
+                    if (!contains) {
+                        refraction_stack->push_back(the_object);
+                    }
+                } else {
+                    refraction_stack->push_back(the_object);
+                }
+                Color refracted_color = trace_ray(objects, lights, refracted_ray, std::move(refraction_stack), depth - 1);
+                res.color = res.color + refracted_color * the_object->transparency;
+            }
         }
-        // std::cout << refracted_color.r<< "," << refracted_color.g << "," << refracted_color.b << "\n";
     }
     return res.color;
 }
@@ -86,101 +119,97 @@ Color trace_ray (const std::vector<Object *> &objects,
 void render(const int size) {
     std::vector<Color> framebuffer(size * size);
     Ray ray = Ray();
-    // Vect a(size / 4, size / 3, size);
-    // Vect b(size / 3, size / 3 * 2, size);
-    // Vect c(size / 4 * 3, size / 2, size);
-    // Triangle tr = Triangle(a, b, c);
-    Vect ico_pos (size / 2, size / 2, size / 4);
-    Vect ico_pos1 (size / 4, size / 4, 2*size/3);
-    Icosahedron ico(100, ico_pos, Vect(0, 1, 0.2));
-    // Icosahedron ico(100, Vect(3*size/4, size/3, size/3), Vect(0, 1, 0));
-    // Icosahedron ico(50, Vect(3*size/4, size/3, size/3), Vect(0,1,0));
-    ico.reflection[0] = 0.5;
-    ico.reflection[1] = 0.8;
-    ico.reflection[2] = 0.3;
-    ico.reflection[3] = 1.2; //прозрачность
-    ico.refraction = 1.02;
-    ico.specular = 125;
-    // ico.color = Color(0, 0, 0, 1);
+    Vect ico_pos (size / 2, size / 3, size / 4);
+    Vect ico_pos1 (size / 4 - 20, size / 4, 2*size/3 + 20);
+
+    //Icosahedron
+    Icosahedron ico(size/2.5, ico_pos, Vect(0, 1, 0.2));
+    ico.absorbtion = 0.6;
+    ico.reflection[0] = 0.6;
+    ico.reflection[1] = 0.2;
+    ico.transparency = 1.4;
+    ico.refraction = 1.5;
+    ico.specular = 50;
+    ico.color = Color(0.2, 0.2, 0.2, 1);
+
+    //Inner icosahedron
+    Icosahedron inner_ico(ico.edge * 0.95, ico_pos, Vect(0, 1, 0.2));
+    inner_ico.reflection[1] = ico.reflection[1];
+    inner_ico.transparency = ico.transparency; //прозрачность
+    inner_ico.refraction = 1;
+    inner_ico.color = Color(0.2,0.2,0.2);
     float ico_rad = sqrt(2 * (5 + sqrt(5))) * ico.edge / 4;
     float cyl_height = 40;
-    Cylinder cyl(ico.center + ico.axis * (ico_rad + cyl_height / 2 - 2), cyl_height, 180, ico.axis);
-    cyl.reflection[0] = 0.6;
-    cyl.reflection[1] = 0.5;
-    cyl.reflection[2] = 0.5;
-    cyl.reflection[3] = 0.0;
-    cyl.refraction = 10;
-    cyl.specular = 250;
-    cyl.color = Color(0.3, 0.3, 0.2, 1) - Color() / 3;
-    Icosahedron ico1(150, ico_pos1, Vect(1, 1, 0));
-    ico1.reflection[0] = 0.3;
-    ico1.reflection[1] = 0.3;
-    ico1.reflection[2] = 0.3;
-    ico1.reflection[3] = 0.0;
-    ico1.refraction = 50;
-    ico1.specular = 50;
-    Sphere sph1(Vect(size / 4, size / 4, 2*size/3), 120);
-    sph1.reflection[0] = 0.6;
-    sph1.reflection[1] = 0.3;
-    sph1.reflection[2] = 0.8;
-    sph1.reflection[3] = 0.0;
-    sph1.specular = 150;
-    sph1.color = Color(1, 0, 0, 1);
-    Sphere sph(Vect(3*size/4 - 50, size/3, size/3), 50);
-    // Sphere sph(Vect(size / 2, size / 2, size / 4), 50);
-    sph.reflection[0] = 0.0;
-    sph.reflection[1] = 1;
-    sph.reflection[2] = 0.8;
-    sph.reflection[3] = 0;
-    sph.refraction = 1;
-    sph.specular = 1425;
-    sph.color = Color(1, 0, 0, 1);
-    // for (int i = 0; i < 20; i++) {
-    //     std::cout  << "(" << ico.triangles[i].a.x << ","
-    //                << ico.triangles[i].a.y << ","
-    //                << ico.triangles[i].a.z << "), ("
-    //                << ico.triangles[i].b.x << ","
-    //                << ico.triangles[i].b.y << ","
-    //                << ico.triangles[i].b.z << "), ("
-    //                << ico.triangles[i].c.x << ","
-    //                << ico.triangles[i].c.y << ","
-    //                << ico.triangles[i].c.z << ")\n";
-    // }
+
+    //Stand
+    Cylinder stand(ico.center + ico.axis * (ico_rad + cyl_height / 2 - 2), cyl_height, size / 2, ico.axis);
+    stand.absorbtion = 0.6;
+    stand.reflection[0] = 0.5;
+    stand.reflection[1] = 0.5;
+    stand.transparency = 0.0;
+    stand.refraction = 10;
+    stand.specular = 250;
+    stand.color = Color(0.3, 0.3, 0.2, 1) - Color() / 3;
+
+    //Plane
+    Plane plane(-ico.axis, ico.center + ico.axis * (ico_rad + cyl_height), Color(0.3, 1, 1), Color(0.3, 1, 1));
+    plane.reflection[0] = 0;
+    plane.reflection[1] = 0;
+    plane.absorbtion = 0.5;
     ray.pos = Vect(size/2, size/2, -size);
-    // ray.dir = Vect(0, 0, 1);
-    // std::cout<<"3\n";
-    // Intersection intr = tr.intersect(ray);
-    // std::cout << intr.hit << " " << intr.dist << "\n";
+
     std::vector<Object *> objects;
     objects.push_back(&ico);
-    objects.push_back(&ico1);
-    // objects.push_back(&sph1);
-    objects.push_back(&sph);
-    objects.push_back(&cyl);
+    objects.push_back(&inner_ico);
+    objects.push_back(&stand);
+    objects.push_back(&plane);
+    
+    Ellipsoid * cavity;
+
+    float ico_small_rad = (3 + sqrt(5)) * ico.edge / (4 * sqrt(3));
+    for (int i = 0; i < 60; i++) {
+        float rad_a = (4 + ((float) rand()) / RAND_MAX * 10) * (size / 512);
+        // Let it be spheres
+
+        // float rad_b = (8 + ((float) rand()) / RAND_MAX * 10) * (SIZE / 512);
+        // float rad_c = (4 + ((float) rand()) / RAND_MAX * 10) * (SIZE / 512);
+        // float rad = std::max(std::max(rad_a, rad_b), rad_c);
+
+        // The bubbles may be colored
+
+        // float r_color = ((float) rand()) / RAND_MAX;
+        // float g_color = ((float) rand()) / RAND_MAX;
+        // float b_color = ((float) rand()) / RAND_MAX;
+        float x_pos, y_pos, z_pos;
+        do {
+            x_pos = ((float) rand()) / RAND_MAX * (ico_small_rad - rad_a) * 0.9 * (rand() % 2 ? -1 : 1);
+            y_pos = ((float) rand()) / RAND_MAX * (ico_small_rad - rad_a) * 0.9 * (rand() % 2 ? -1 : 1);
+            z_pos = ((float) rand()) / RAND_MAX * (ico_small_rad - rad_a) * 0.9 * (rand() % 2 ? -1 : 1);
+        } while ((Vect(x_pos, y_pos, z_pos)).len() > (ico_small_rad - rad_a) * 0.9);
+        cavity = new Ellipsoid(ico.center + Vect(x_pos, y_pos, z_pos), rad_a, rad_a, rad_a);
+        cavity->color = Color(0.1, 0.1, 0.1);
+        cavity->refraction = 1.2;
+        cavity->transparency = 1.2;
+        cavity->absorbtion = 0.7;
+        objects.push_back(cavity);
+    }
+
     Light light_1(Vect(2*size/3, size/2, -size), 5);
-    Light light_2(Vect(0, -size/2, size/4), 2);
-    Light light_3(Vect(-size/4, size/2, size/2), 2);
+    Light light_3(Vect(-size/4, size/2, size/2), 4);
     Light light_4(Vect(2*size/3, size / 3, -size/2), 2);
-    Light light_5(Vect(3*size/4 + 150, size/4-150, size/2-150), 2);
     std::vector<Light> lights;
     lights.push_back(light_1);
-    lights.push_back(light_2);
     lights.push_back(light_3);
     lights.push_back(light_4);
-    lights.push_back(light_5);
+
+
+    std::vector<Object *> refraction_stack;
+    refraction_stack.clear();
     for (int y = 0; y < size; y++) {
         for (int x = 0; x < size; x++) {
-            // float x1 =  (2*(x + 0.5)/(float)size  - 1)*tan(fov/2.);
-            // float y1 = -(2*(y + 0.5)/(float)size - 1)*tan(fov/2.);
             Vect pix_pos(x, y, 0);
             ray.dir = (pix_pos - ray.pos).normalize();
-            // ray.dir = Vect(x1, y1, -1).normalize();
-            // std::cout<<"5\n";
-            // std::cout<<ray.dir.x << " "<<ray.dir.y<<" "<<ray.dir.z<<"\n";
-            framebuffer[x + y * size] = trace_ray(objects, lights, ray, 4);
-            // if (framebuffer[x + y * size] == Color(0, 0, 0, 1)) {
-
-            // }
+            framebuffer[x + y * size] = trace_ray(objects, lights, ray, &refraction_stack, 8);
         }
     }
     
@@ -193,11 +222,20 @@ void render(const int size) {
             data[3 + x * 4 + y * size * 4] = (unsigned char)(255 * std::max(0.f, std::min(1.f, framebuffer[x + y * size].a)));
         }
     }
-    stbi_write_png("327_rudenko_v4v5.png", size, size, 4, data, size * 4);
+    stbi_write_png("327_rudenko_v5v2.png", size, size, 4, data, size * 4);
 }
 
-int main() {
+int main(int argc, char ** argv) {
     std::cout<<"start\n";
-    render(SIZE);
+    int size = 512;
+    if (argc > 2) {
+        if ((std::string(argv[1]) == "-w") || (std::string(argv[2]) == "1024")) {
+            size = 1024;
+        }
+    }
+    time_t start_time = std::time(NULL);
+    render(size);
+    time_t end_time = std::time(NULL);
+    std::cout << "\nTime: " << end_time - start_time << "s\n";
     return 0;
 }

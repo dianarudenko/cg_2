@@ -44,21 +44,45 @@ Intersection Triangle::intersect(Ray ray) {
     return Intersection();
 }
 
+//--------------------------- PLANE ---------------------------//
+
+Intersection Plane::intersect(Ray ray) {
+    Intersection res;
+    float t = -(normal.dot(ray.pos) - normal.dot(dot)) / normal.dot(ray.dir);
+    if (t < EPS) {
+        return res;
+    }
+    res.hit = true;
+    res.dist = t;
+    res.pos = ray.pos + ray.dir * t;
+    Vect axis1 = normal.cross(Vect(normal.x, -normal.z, normal.y)).normalize();
+    if ((-normal.z == normal.y) && (normal.z == normal.y)) {
+        axis1 = normal.cross(Vect(0, 0, 1)).normalize();
+    }
+    Vect axis2 = axis1.cross(normal);
+    res.color = ((int)(.05 * res.pos.dot(axis1)) + (int)(.05 * res.pos.dot(axis2))) & 1 ? color1 : color2;
+    res.normal = normal;
+    res.reflected = ray.dir.reflect(normal);
+    return res;
+}
+
 //--------------------------- ICOSAHEDRON ---------------------------//
 
-Icosahedron::Icosahedron(float edge, Vect center, Vect axis): edge(edge), center(center), axis(axis) {
+Icosahedron::Icosahedron(float edge, Vect center, Vect axis): edge(edge),
+                                                              center(center),
+                                                              axis(axis) {
     triangles_number = 20;
     triangles = new Triangle[triangles_number];
     // float incribed_rad = (3 + sqrt(5)) * edge / (4 * sqrt(3));
     float cercumscribed_rad = sqrt(2 * (5 + sqrt(5))) * edge / 4;
-    color = Color(1, 0, 0, 1);
 
     Vect _axis = axis.normalize();
     Vect top = center + _axis * cercumscribed_rad;
     Vect bottom = center - _axis * cercumscribed_rad;
     Vect normal = _axis.cross(Vect(_axis.x, -_axis.z, _axis.y)).normalize();
+    normal = normal.rotateAroundAxis(_axis, M_PI / 3);
     if ((-_axis.z == _axis.y) && (_axis.z == _axis.y)) {
-        normal = _axis.cross(Vect(1, 1, 1)).normalize();
+        normal = _axis.cross(Vect(0, 0, 1)).normalize();
     }
 
     float h = sqrt(3) * edge / 2;
@@ -69,9 +93,6 @@ Icosahedron::Icosahedron(float edge, Vect center, Vect axis): edge(edge), center
     for (int i = 0; i < 10; i++) {
         Vect tmp = center + _axis * (up_down * h / 2);
         Vect vertice = tmp + normal.rotateAroundAxis(_axis, angle * i) * tmp_rad;
-        // float x = center.x + tmp_rad * cos(i * angle);
-        // float y = center.y + up_down * h / 2;
-        // float z = center.z + tmp_rad * sin(i * angle);
         vertices[i] = vertice;
         up_down *= -1;
     }
@@ -79,14 +100,12 @@ Icosahedron::Icosahedron(float edge, Vect center, Vect axis): edge(edge), center
         triangles[i].a = bottom;
         triangles[i].b = vertices[(i * 2) % 10];
         triangles[i].c = vertices[((i + 1) * 2) % 10];
-        // triangles[i].color = Color (0.2 * (i + 1), 0, 0, 1);
         Vect ab = triangles[i].b - triangles[i].a;
         Vect ac = triangles[i].c - triangles[i].a;
         triangles[i].normal = ac.cross(ab).normalize();
         triangles[19 - i].a = top;
         triangles[19 - i].b = vertices[(i * 2 + 1) % 10];
         triangles[19 - i].c = vertices[(i * 2 + 3) % 10];
-        // triangles[19 - i].color = Color (0, 0.2 * (i + 1), 0, 1);
         ab = triangles[19 - i].b - triangles[19 - i].a;
         ac = triangles[19 - i].c - triangles[19 - i].a;
         triangles[19 - i].normal = ab.cross(ac).normalize();
@@ -95,7 +114,6 @@ Icosahedron::Icosahedron(float edge, Vect center, Vect axis): edge(edge), center
         triangles[i + 5].a = vertices[i];
         triangles[i + 5].b = vertices[(i + 1) % 10];
         triangles[i + 5].c = vertices[(i + 2) % 10];
-        // triangles[i + 5].color = Color (0.1 * (i + 1), 0, 0.1 * (i + 1), 1);
         Vect ab = triangles[i + 5].b - triangles[i + 5].a;
         Vect ac = triangles[i + 5].c - triangles[i + 5].a;
         if (i % 2) {
@@ -114,17 +132,10 @@ Intersection Icosahedron::intersect(Ray ray) {
         if (tmp.hit && !res.hit) {
             res = tmp;
         } else if (tmp.hit && res.dist > tmp.dist) {
-            // Color old = res.color;
             res = tmp;
-            // res.color = res.color + old;
         }
     }
     res.color = color;
-    res.refracted = ray.dir.refract(res.normal, refraction).normalize();
-    // res.specular = specular;
-    // res.reflect = reflect;
-    // res.absorbtion = absorbtion;
-    // res.real = real;
     return res;
 }
 
@@ -174,8 +185,7 @@ Intersection Cylinder::intersect(Ray ray) {
         }
     }
     Vect pos = ray.pos + ray.dir * dist;
-    Vect normal = (pos - (center + axis * axis.dot(pos - center))).normalize(); // ?
-    // normal = -normal;
+    Vect normal = (pos - (center + axis * axis.dot(pos - center))).normalize();
 
     float t3 = -(axis.dot(ray.pos) - axis.dot(upper)) / axis.dot(ray.dir);
     if ((t3 > 0) && ((upper - (ray.pos + ray.dir * t3)).len() < rad)) {
@@ -205,5 +215,59 @@ Intersection Cylinder::intersect(Ray ray) {
     res.pos = ray.pos + ray.dir * dist;
     res.normal = normal;
     res.reflected = ray.dir.reflect(res.normal);
+    return res;
+}
+
+//--------------------------- ELLIPSOID ---------------------------//
+
+Intersection Ellipsoid::intersect(Ray ray) {
+    Intersection res;
+
+    Matrix M = Matrix(Vect(1 / a_rad, 0, 0),
+                           Vect(0, 1 / b_rad, 0),
+                           Vect(0, 0, 1 / c_rad));
+    Vect pos = M * ray.pos - M * center;
+    Vect dir = M * ray.dir;
+
+    float a = dir.dot(dir);
+    float b = 2 * pos.dot(dir);
+    float c = pos.dot(pos) - 1;
+
+    float dist = -1;
+
+    if (a == 0) {
+        if (b == 0) {
+            return res;
+        }
+        dist = -c / b;
+        if (dist < EPS) {
+            return res;
+        }
+    } else {
+        float d = b * b - 4 * a * c;
+        if (d < 0) {
+            return res;
+        }
+        float t1 = (-b + sqrtf(d)) / (2 * a);
+        float t2 = (-b - sqrtf(d)) / (2 * a);
+        dist = t1;
+        if (dist < EPS) {
+            if (t2 < EPS) {
+                return res;
+            }
+            dist = t2;
+        } else {
+            if (t2 >= EPS)
+                dist = std::min(dist, t2);
+        }
+    }
+    res.hit = true;
+    res.dist = dist;
+    res.pos = ray.pos + ray.dir * dist;
+    res.normal = {(res.pos - center).x / a_rad / a_rad,
+                  (res.pos - center).y / b_rad / b_rad,
+                  (res.pos - center).z / c_rad / c_rad};
+    res.normal = res.normal.normalize();
+    res.color = color;
     return res;
 }
